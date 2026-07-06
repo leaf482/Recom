@@ -68,6 +68,21 @@ docker compose exec redis redis-cli LRANGE user:user_1:recent_tracks 0 -1
 docker compose exec redis redis-cli HGETALL user:user_1:event_counts
 ```
 
+User features and recommendations:
+
+```bash
+curl http://localhost:8080/users/user_1/features
+curl http://localhost:8080/users/user_1/recommendations
+curl "http://localhost:8080/users/user_99/recommendations?limit=5"
+```
+
+After the simulator and consumer run for a minute, compare recommendations for different users:
+
+```bash
+curl http://localhost:8080/users/user_1/recommendations
+curl http://localhost:8080/users/user_2/recommendations
+```
+
 Example event payload:
 
 ```json

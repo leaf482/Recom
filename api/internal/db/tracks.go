@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -31,7 +32,25 @@ func ListTracks(ctx context.Context, pool *pgxpool.Pool, limit int) ([]Track, er
 	}
 	defer rows.Close()
 
-	tracks := make([]Track, 0, limit)
+	return scanTracks(rows)
+}
+
+func ListAllTracks(ctx context.Context, pool *pgxpool.Pool) ([]Track, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, title, artist_id, artist_name, genre, popularity, release_year, created_at
+		FROM tracks
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query all tracks: %w", err)
+	}
+	defer rows.Close()
+
+	return scanTracks(rows)
+}
+
+func scanTracks(rows pgx.Rows) ([]Track, error) {
+	tracks := make([]Track, 0)
 	for rows.Next() {
 		var track Track
 		if err := rows.Scan(

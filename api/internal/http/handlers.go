@@ -7,12 +7,14 @@ import (
 	"strconv"
 
 	"echorec/api/internal/db"
+	"echorec/api/internal/recommendation"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Server struct {
-	DB *pgxpool.Pool
+	DB              *pgxpool.Pool
+	Recommendations *recommendation.Service
 }
 
 func (s *Server) Health(w http.ResponseWriter, r *http.Request) {
@@ -39,11 +41,68 @@ func (s *Server) ListTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, map[string]any{
 		"count":  len(tracks),
 		"tracks": tracks,
-	}); err != nil {
-		log.Printf("encode tracks response: %v", err)
+	})
+}
+
+func (s *Server) GetUserFeatures(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("userId")
+	if userID == "" {
+		http.Error(w, "userId is required", http.StatusBadRequest)
+		return
+	}
+
+	features, err := s.Recommendations.GetUserFeatures(r.Context(), userID)
+	if err != nil {
+		log.Printf("get user features: %v", err)
+		http.Error(w, "failed to load user features", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"userId":       userID,
+		"genreScores":  features.GenreScores,
+		"artistScores": features.ArtistScores,
+		"recentTracks": features.RecentTracks,
+		"eventCounts":  features.EventCounts,
+	})
+}
+
+func (s *Server) GetUserRecommendations(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("userId")
+	if userID == "" {
+		http.Error(w, "userId is required", http.StatusBadRequest)
+		return
+	}
+
+	limit := 10
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			http.Error(w, "limit must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		limit = parsed
+	}
+
+	recommendations, err := s.Recommendations.GetRecommendations(r.Context(), userID, limit)
+	if err != nil {
+		log.Printf("get recommendations: %v", err)
+		http.Error(w, "failed to load recommendations", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"userId":          userID,
+		"recommendations": recommendations,
+	})
+}
+
+func writeJSON(w http.ResponseWriter, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		log.Printf("encode json response: %v", err)
 	}
 }

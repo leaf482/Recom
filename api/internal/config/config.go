@@ -5,12 +5,14 @@ import "os"
 type Config struct {
 	APIAddr     string
 	DatabaseURL string
+	RedisAddr   string
 }
 
 func Load() Config {
 	return Config{
 		APIAddr:     envOrDefault("API_ADDR", ":8080"),
 		DatabaseURL: envOrDefault("DATABASE_URL", "postgres://echorec:echorec@localhost:5432/echorec?sslmode=disable"),
+		RedisAddr:   envOrDefault("REDIS_ADDR", "localhost:6379"),
 	}
 }
 
