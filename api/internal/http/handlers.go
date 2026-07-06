@@ -96,7 +96,28 @@ func (s *Server) GetUserRecommendations(w http.ResponseWriter, r *http.Request) 
 
 	writeJSON(w, map[string]any{
 		"userId":          userID,
-		"recommendations": recommendations,
+		"strategy":        recommendations.Strategy,
+		"recommendations": recommendations.Recommendations,
+	})
+}
+
+func (s *Server) GetExperimentMetrics(w http.ResponseWriter, r *http.Request) {
+	experimentID := r.PathValue("experimentId")
+	if experimentID == "" {
+		http.Error(w, "experimentId is required", http.StatusBadRequest)
+		return
+	}
+
+	metrics, err := s.Recommendations.GetExperimentMetrics(r.Context(), experimentID)
+	if err != nil {
+		log.Printf("get experiment metrics: %v", err)
+		http.Error(w, "failed to load experiment metrics", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"experimentId": experimentID,
+		"strategies":   metrics,
 	})
 }
 

@@ -41,6 +41,7 @@ func main() {
 	mux.HandleFunc("GET /tracks", server.ListTracks)
 	mux.HandleFunc("GET /users/{userId}/features", server.GetUserFeatures)
 	mux.HandleFunc("GET /users/{userId}/recommendations", server.GetUserRecommendations)
+	mux.HandleFunc("GET /experiments/{experimentId}/metrics", server.GetExperimentMetrics)
 
 	log.Printf("starting API on %s", cfg.APIAddr)
 	if err := http.ListenAndServe(cfg.APIAddr, mux); err != nil {

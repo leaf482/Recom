@@ -6,8 +6,10 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"echorec/api/internal/db"
+	"echorec/api/internal/experiments"
 	"echorec/api/internal/redisstore"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,13 +17,9 @@ import (
 )
 
 const (
-	defaultLimit     = 10
-	minCatalogYear   = 2015
-	maxCatalogYear   = 2026
-	genreWeight      = 0.45
-	artistWeight     = 0.25
-	popularityWeight = 0.20
-	freshnessWeight  = 0.10
+	defaultLimit   = 10
+	minCatalogYear = 2015
+	maxCatalogYear = 2026
 )
 
 type Recommendation struct {
@@ -34,32 +32,47 @@ type Recommendation struct {
 	Reason     string  `json:"reason"`
 }
 
+type RecommendationsResult struct {
+	Strategy        string
+	Recommendations []Recommendation
+}
+
 type Service struct {
-	db    *pgxpool.Pool
-	redis *redis.Client
+	db      *pgxpool.Pool
+	redis   *redis.Client
+	metrics *experiments.MetricsRecorder
 }
 
 func NewService(pool *pgxpool.Pool, redisClient *redis.Client) *Service {
-	return &Service{db: pool, redis: redisClient}
+	return &Service{
+		db:      pool,
+		redis:   redisClient,
+		metrics: experiments.NewMetricsRecorder(redisClient),
+	}
 }
 
 func (s *Service) GetUserFeatures(ctx context.Context, userID string) (redisstore.UserFeatures, error) {
 	return redisstore.LoadUserFeatures(ctx, s.redis, userID)
 }
 
-func (s *Service) GetRecommendations(ctx context.Context, userID string, limit int) ([]Recommendation, error) {
+func (s *Service) GetRecommendations(ctx context.Context, userID string, limit int) (RecommendationsResult, error) {
+	startedAt := time.Now()
+
 	if limit <= 0 {
 		limit = defaultLimit
 	}
 
+	strategy := experiments.AssignStrategy(userID)
+	weights := experiments.WeightsForStrategy(strategy)
+
 	features, err := redisstore.LoadUserFeatures(ctx, s.redis, userID)
 	if err != nil {
-		return nil, err
+		return RecommendationsResult{}, err
 	}
 
 	tracks, err := db.ListAllTracks(ctx, s.db)
 	if err != nil {
-		return nil, err
+		return RecommendationsResult{}, err
 	}
 
 	candidates := filterCandidates(tracks, features.RecentTracks, limit)
@@ -67,7 +80,7 @@ func (s *Service) GetRecommendations(ctx context.Context, userID string, limit i
 
 	scored := make([]Recommendation, 0, len(candidates))
 	for _, track := range candidates {
-		score, reason := scoreTrack(track, features, coldStart)
+		score, reason := scoreTrack(track, features, coldStart, weights, strategy)
 		scored = append(scored, Recommendation{
 			TrackID:    track.ID,
 			Title:      track.Title,
@@ -87,7 +100,19 @@ func (s *Service) GetRecommendations(ctx context.Context, userID string, limit i
 		scored = scored[:limit]
 	}
 
-	return scored, nil
+	latencyMs := float64(time.Since(startedAt).Microseconds()) / 1000.0
+	if err := s.metrics.RecordRecommendation(ctx, experiments.DefaultExperimentID, strategy, len(scored), latencyMs); err != nil {
+		return RecommendationsResult{}, fmt.Errorf("record experiment metrics: %w", err)
+	}
+
+	return RecommendationsResult{
+		Strategy:        strategy,
+		Recommendations: scored,
+	}, nil
+}
+
+func (s *Service) GetExperimentMetrics(ctx context.Context, experimentID string) ([]experiments.StrategyMetrics, error) {
+	return s.metrics.GetMetrics(ctx, experimentID)
 }
 
 func filterCandidates(tracks []db.Track, recentTracks []string, limit int) []db.Track {
@@ -119,25 +144,28 @@ func isColdStart(features redisstore.UserFeatures) bool {
 	return len(features.GenreScores) == 0 && len(features.ArtistScores) == 0
 }
 
-func scoreTrack(track db.Track, features redisstore.UserFeatures, coldStart bool) (float64, string) {
+func scoreTrack(track db.Track, features redisstore.UserFeatures, coldStart bool, weights experiments.Weights, strategy string) (float64, string) {
 	popularity := float64(track.Popularity) / 100.0
 	freshness := freshnessScore(track.ReleaseYear)
 
 	if coldStart {
-		score := popularity*popularityWeight + freshness*freshnessWeight
-		normalized := score / (popularityWeight + freshnessWeight)
-		return normalized, "Popular recent track for new listeners"
+		discoveryWeight := weights.Popularity + weights.Freshness
+		score := popularity*weights.Popularity + freshness*weights.Freshness
+		if discoveryWeight > 0 {
+			score /= discoveryWeight
+		}
+		return score, "Popular recent track for new listeners"
 	}
 
 	genreAffinity := positiveNormalized(features.GenreScores, track.Genre)
 	artistAffinity := positiveNormalized(features.ArtistScores, track.ArtistID)
 
-	score := genreAffinity*genreWeight +
-		artistAffinity*artistWeight +
-		popularity*popularityWeight +
-		freshness*freshnessWeight
+	score := genreAffinity*weights.Genre +
+		artistAffinity*weights.Artist +
+		popularity*weights.Popularity +
+		freshness*weights.Freshness
 
-	reason := buildReason(track, genreAffinity, artistAffinity, popularity, freshness)
+	reason := buildReason(track, genreAffinity, artistAffinity, popularity, freshness, strategy)
 	return score, reason
 }
 
@@ -171,7 +199,7 @@ func freshnessScore(releaseYear int) float64 {
 	return math.Max(0, math.Min(1, score))
 }
 
-func buildReason(track db.Track, genreAffinity, artistAffinity, popularity, freshness float64) string {
+func buildReason(track db.Track, genreAffinity, artistAffinity, popularity, freshness float64, strategy string) string {
 	type reasonCandidate struct {
 		text  string
 		value float64
@@ -194,6 +222,17 @@ func buildReason(track db.Track, genreAffinity, artistAffinity, popularity, fres
 			text:  "Recent release with high freshness",
 			value: freshness,
 		},
+	}
+
+	if strategy == experiments.StrategyExploration {
+		candidates[2].value += 0.15
+		candidates[3].value += 0.15
+	}
+	if strategy == experiments.StrategyGenreAffinity {
+		candidates[0].value += 0.15
+	}
+	if strategy == experiments.StrategyArtistAffinity {
+		candidates[1].value += 0.15
 	}
 
 	sort.Slice(candidates, func(i, j int) bool {

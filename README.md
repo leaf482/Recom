@@ -4,7 +4,7 @@ Real-time music recommendation platform (work in progress).
 
 ## Phase 1 — Local Development
 
-Start all services (PostgreSQL, Redis, Redpanda, API, simulator, consumer):
+Start all services (PostgreSQL, Redis, Redpanda, API, simulator, consumer, dashboard):
 
 ```bash
 docker compose up --build
@@ -83,6 +83,29 @@ curl http://localhost:8080/users/user_1/recommendations
 curl http://localhost:8080/users/user_2/recommendations
 ```
 
+Experiment strategy assignment and metrics:
+
+```bash
+# strategy is stable per userId
+curl http://localhost:8080/users/user_1/recommendations
+curl http://localhost:8080/users/user_1/recommendations
+
+# compare different users
+curl http://localhost:8080/users/user_2/recommendations
+curl http://localhost:8080/users/user_3/recommendations
+
+# metrics update after recommendation requests
+curl http://localhost:8080/experiments/default/metrics
+```
+
+Open the dashboard:
+
+```text
+http://localhost:3000
+```
+
+The dashboard proxies API requests through `/backend/*` to the Go API.
+
 Example event payload:
 
 ```json
@@ -102,6 +125,7 @@ Example event payload:
 
 | Service    | Port  |
 |------------|-------|
+| Dashboard  | 3000  |
 | API        | 8080  |
 | Simulator  | —     |
 | Consumer   | —     |

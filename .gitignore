@@ -6,5 +6,9 @@ simulator/simulator.exe
 consumer/consumer
 consumer/consumer.exe
 
+# Node
+dashboard/node_modules
+dashboard/.next
+
 # Docker
 .env

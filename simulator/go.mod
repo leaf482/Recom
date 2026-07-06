@@ -1,6 +1,6 @@
 module echorec/simulator
 
-go 1.22
+go 1.25.0
 
 require (
 	echorec/events v0.0.0

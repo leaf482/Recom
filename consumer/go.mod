@@ -1,6 +1,6 @@
 module echorec/consumer
 
-go 1.22
+go 1.23
 
 require (
 	echorec/events v0.0.0
