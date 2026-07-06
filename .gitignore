@@ -1,6 +1,8 @@
 # Go
 api/server
 api/server.exe
+simulator/simulator
+simulator/simulator.exe
 
 # Docker
 .env

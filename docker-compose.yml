@@ -68,5 +68,21 @@ services:
       redpanda:
         condition: service_healthy
 
+  simulator:
+    build:
+      context: .
+      dockerfile: simulator/Dockerfile
+    environment:
+      DATABASE_URL: postgres://echorec:echorec@postgres:5432/echorec?sslmode=disable
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_TOPIC: listening-events
+      SIMULATOR_INTERVAL: 2s
+      SIMULATOR_USER_COUNT: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+
 volumes:
   postgres_data:
