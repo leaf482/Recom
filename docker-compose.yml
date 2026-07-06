@@ -84,5 +84,20 @@ services:
       redpanda:
         condition: service_healthy
 
+  consumer:
+    build:
+      context: .
+      dockerfile: consumer/Dockerfile
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_TOPIC: listening-events
+      KAFKA_GROUP_ID: feature-consumer
+      REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+
 volumes:
   postgres_data:

@@ -3,6 +3,8 @@ api/server
 api/server.exe
 simulator/simulator
 simulator/simulator.exe
+consumer/consumer
+consumer/consumer.exe
 
 # Docker
 .env

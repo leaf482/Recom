@@ -4,7 +4,7 @@ Real-time music recommendation platform (work in progress).
 
 ## Phase 1 — Local Development
 
-Start all services (PostgreSQL, Redis, Redpanda, API, simulator):
+Start all services (PostgreSQL, Redis, Redpanda, API, simulator, consumer):
 
 ```bash
 docker compose up --build
@@ -53,6 +53,21 @@ Inspect events on the `listening-events` topic:
 docker compose exec redpanda rpk topic consume listening-events -n 5
 ```
 
+Watch consumer logs:
+
+```bash
+docker compose logs -f consumer
+```
+
+Inspect Redis user features (replace `user_1` as needed):
+
+```bash
+docker compose exec redis redis-cli HGETALL user:user_1:genre_score
+docker compose exec redis redis-cli HGETALL user:user_1:artist_score
+docker compose exec redis redis-cli LRANGE user:user_1:recent_tracks 0 -1
+docker compose exec redis redis-cli HGETALL user:user_1:event_counts
+```
+
 Example event payload:
 
 ```json
@@ -74,6 +89,7 @@ Example event payload:
 |------------|-------|
 | API        | 8080  |
 | Simulator  | —     |
+| Consumer   | —     |
 | PostgreSQL | 5432  |
 | Redis      | 6379  |
 | Redpanda   | 19092 |
