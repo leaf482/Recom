@@ -1,0 +1,6 @@
+# Go
+api/server
+api/server.exe
+
+# Docker
+.env
